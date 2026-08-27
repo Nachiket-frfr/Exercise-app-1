@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import CalendarHeatmap from 'react-calendar-heatmap'; 
 import { Tooltip } from 'react-tooltip';
 import 'react-calendar-heatmap/dist/styles.css';
 
+import LevelShow from './LevelUpModal.jsx';
 import { LevelExp, getExpNeeded, Consistency } from './levels';
 
-// Helper to standardise YYYY-MM-DD local strings
-const getLocalDateStr = (d) => {
+const getLocalDateStr = (d = new Date()) => {
   const dateObj = new Date(d);
   const year = dateObj.getFullYear();
   const month = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -15,137 +15,216 @@ const getLocalDateStr = (d) => {
 };
 
 export default function App() {
-  const today = new Date();
-  const todayStr = getLocalDateStr(today);
+  const todayStr = useMemo(() => getLocalDateStr(), []);
 
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const yesterdayStr = getLocalDateStr(yesterday);
+  const yesterdayStr = useMemo(() => {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    return getLocalDateStr(y);
+  }, []);
 
-  // Define date bounds
-  const startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-  const endDate = new Date(today.getFullYear(), today.getMonth() + 12, today.getDate());
+  const [firstLoginDate] = useState(() => {
+    const saved = localStorage.getItem('firstLoginDate');
+    if (saved) return saved;
+    localStorage.setItem('firstLoginDate', todayStr);
+    return todayStr;
+  });
 
-  // Persistent States
+  // Range: 30 days in the past up to 365 days in the future
+  const { startDate, endDate } = useMemo(() => {
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+
+    const end = new Date();
+    end.setDate(end.getDate() + 365);
+
+    return { startDate: start, endDate: end };
+  }, []);
+
   const [completedDates, setCompletedDates] = useState(() => {
     try {
-      const saved = localStorage.getItem('completedDates');
-      return saved ? JSON.parse(saved) : [];
+      return JSON.parse(localStorage.getItem('completedDates')) || [];
     } catch {
       return [];
     }
   });
 
-  const [userLvl, setUserLvl] = useState(() => {
+  // Unified state to eliminate stale closures & double-trigger bugs
+  const [userStats, setUserStats] = useState(() => {
     try {
-      const saved = localStorage.getItem('userLvl');
-      return saved ? JSON.parse(saved) : 1;
+      return {
+        lvl: JSON.parse(localStorage.getItem('userLvl')) || 1,
+        currExp: JSON.parse(localStorage.getItem('currExp')) || 0,
+      };
     } catch {
-      return 1;
-    }
-  });
-
-  const [curr, setCurr] = useState(() => {
-    try {
-      const saved = localStorage.getItem('currExp');
-      return saved ? JSON.parse(saved) : 0;
-    } catch {
-      return 0;
+      return { lvl: 1, currExp: 0 };
     }
   });
 
   const [streak, setStreak] = useState(() => {
     try {
-      const saved = localStorage.getItem('streak');
-      return saved ? JSON.parse(saved) : 0;
+      return JSON.parse(localStorage.getItem('streak')) || 0;
     } catch {
       return 0;
     }
   });
 
+  const [didLevelUp, setDidLevelUp] = useState(false);
+
+  // Sync state with LocalStorage
   useEffect(() => {
     localStorage.setItem('completedDates', JSON.stringify(completedDates));
-    localStorage.setItem('userLvl', JSON.stringify(userLvl));
-    localStorage.setItem('currExp', JSON.stringify(curr));
+    localStorage.setItem('userLvl', JSON.stringify(userStats.lvl));
+    localStorage.setItem('currExp', JSON.stringify(userStats.currExp));
     localStorage.setItem('streak', JSON.stringify(streak));
-  }, [completedDates, userLvl, curr, streak]);
+  }, [completedDates, userStats, streak]);
 
-  const expNeed = getExpNeeded(userLvl);
+  const expNeed = getExpNeeded(userStats.lvl);
+  const isTodayDone = completedDates.includes(todayStr);
 
-  // Build heatmap values array using standard Date objects
-  const heatmapValues = [];
-  let currDate = new Date(startDate);
-  while (currDate <= endDate) {
-    heatmapValues.push({ date: new Date(currDate) });
-    currDate.setDate(currDate.getDate() + 1);
-  }
-
-  const addExp = (amount, currentLevel, currentExp) => {
-    let newExp = currentExp + amount;
-    let lvl = currentLevel;
-    let needed = getExpNeeded(lvl);
-
-    while (newExp >= needed) {
-      newExp -= needed;
-      lvl += 1;
-      needed = getExpNeeded(lvl);
+  const heatmapValues = useMemo(() => {
+    const values = [];
+    let currDate = new Date(startDate);
+    while (currDate <= endDate) {
+      values.push({ date: new Date(currDate) });
+      currDate.setDate(currDate.getDate() + 1);
     }
+    return values;
+  }, [startDate, endDate]);
 
-    setUserLvl(lvl);
-    setCurr(newExp);
-  };
+  const addExp = useCallback((amount) => {
+    setUserStats((prev) => {
+      let newExp = prev.currExp + amount;
+      let newLvl = prev.lvl;
+      let needed = getExpNeeded(newLvl);
+      let leveledUp = false;
+
+      while (newExp >= needed) {
+        newExp -= needed;
+        newLvl += 1;
+        needed = getExpNeeded(newLvl);
+        leveledUp = true;
+      }
+
+      if (leveledUp) {
+        setDidLevelUp(false);
+        setTimeout(() => setDidLevelUp(true), 10);
+      }
+
+      return { lvl: newLvl, currExp: newExp };
+    });
+  }, []);
 
   const toggleWorkout = (dateStr) => {
-    if (!dateStr || dateStr !== todayStr) return;
+    if (!dateStr || dateStr !== todayStr || completedDates.includes(dateStr)) return;
 
-    const isAlreadyDone = completedDates.includes(dateStr);
+    const yesterdayCompleted = completedDates.includes(yesterdayStr);
+    const nextStreak = yesterdayCompleted ? streak + 1 : 1;
 
-    if (!isAlreadyDone) {
-      const yesterdayCompleted = completedDates.includes(yesterdayStr);
-      const nextStreak = yesterdayCompleted || streak === 0 ? streak + 1 : 1;
+    setStreak(nextStreak);
+    setCompletedDates((prev) => [...prev, dateStr]);
 
-      setStreak(nextStreak);
-      setCompletedDates((prev) => [...prev, dateStr]);
-
-      const xpGain = Consistency(userLvl, nextStreak);
-      addExp(xpGain, userLvl, curr);
-    }
+    const xpGain = Consistency(userStats.lvl, nextStreak);
+    addExp(xpGain);
   };
 
   const resetProgress = () => {
     localStorage.clear();
     setCompletedDates([]);
-    setUserLvl(1);
-    setCurr(0);
+    setUserStats({ lvl: 1, currExp: 0 });
     setStreak(0);
+    setDidLevelUp(false);
+    localStorage.setItem('firstLoginDate', todayStr);
   };
 
   return (
-    <div style={{ width: '750px', backgroundColor: '#1a1d24', padding: '24px', borderRadius: '12px' }}>
+    <div 
+      style={{ 
+        width: '100%',
+        maxWidth: '750px', 
+        backgroundColor: '#0a0a0c', 
+        border: '1px solid #1f222e',
+        padding: '28px', 
+        borderRadius: '16px',
+        boxShadow: '0 20px 40px rgba(0, 0, 0, 0.8)',
+        fontFamily: 'Inter, system-ui, sans-serif'
+      }}
+    >
+      <LevelShow 
+        level={userStats.lvl} 
+        triggerAnim={didLevelUp} 
+        onComplete={() => setDidLevelUp(false)} 
+      /> 
 
-      <LevelExp userLvl={userLvl} curr={curr} expNeed={expNeed} />
+      <LevelExp userLvl={userStats.lvl} curr={userStats.currExp} expNeed={expNeed} />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
-        <h3 style={{ color: 'white', margin: 0, fontFamily: 'ui-sans-serif' }}>
-          Daily Logs (Streak: {streak})
-        </h3>
-        <button 
-          onClick={resetProgress}
-          style={{ 
-            backgroundColor: '#ef4444', 
-            color: 'white', 
-            border: 'none', 
-            padding: '6px 12px', 
-            borderRadius: '6px', 
-            cursor: 'pointer',
-            fontSize: '12px'
-          }}
-        >
-          Reset Data
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px' }}>
+        <div>
+          <h3 style={{ color: '#ffffff', margin: 0, fontSize: '18px', fontWeight: '800' }}>
+            Daily Activity Log <span style={{ color: '#10b981', marginLeft: '6px' }}>(Streak: {streak})</span>
+          </h3>
+          <span style={{ color: '#525866', fontSize: '12px', fontWeight: '500' }}>
+            Member since {firstLoginDate}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            onClick={() => toggleWorkout(todayStr)}
+            disabled={isTodayDone}
+            style={{
+              backgroundColor: isTodayDone ? '#14171f' : '#10b981',
+              color: isTodayDone ? '#525866' : '#000000',
+              border: isTodayDone ? '1px solid #232734' : 'none',
+              padding: '6px 14px',
+              borderRadius: '6px',
+              cursor: isTodayDone ? 'not-allowed' : 'pointer',
+              fontSize: '12px',
+              fontWeight: '700',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            {isTodayDone ? 'Completed Today' : 'Mark Today Present'}
+          </button>
+
+          <button
+            onClick={() => {
+              setDidLevelUp(false);
+              setTimeout(() => setDidLevelUp(true), 10);
+            }}
+            style={{
+              backgroundColor: '#1f2937',
+              color: '#38bdf8',
+              border: '1px solid #374151',
+              padding: '6px 14px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: '600'
+            }}
+          >
+            Test Level Up
+          </button>
+
+          <button 
+            onClick={resetProgress}
+            style={{ 
+              backgroundColor: 'transparent', 
+              color: '#ef4444', 
+              border: '1px solid #3f1d1d', 
+              padding: '6px 14px', 
+              borderRadius: '6px', 
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontWeight: '600'
+            }}
+          >
+            Reset Progress
+          </button>
+        </div>
       </div>
       
-      <div style={{ marginTop: '16px' }}>
+      <div style={{ marginTop: '20px' }}>
         <CalendarHeatmap
           startDate={startDate}
           endDate={endDate}
@@ -155,34 +234,38 @@ export default function App() {
             
             const dateStr = getLocalDateStr(value.date);
             const isDone = completedDates.includes(dateStr);
-            const isPast = dateStr < todayStr;
             const isToday = dateStr === todayStr;
-
-            if (isPast) {
-              return React.cloneElement(element, {
-                style: { fill: 'transparent', pointerEvents: 'none' }
-              });
-            }
 
             return React.cloneElement(element, {
               'data-tooltip-id': 'heatmap-tooltip',
-              'data-tooltip-content': `${dateStr}${isDone ? ' - Completed' : ''}`,
+              'data-tooltip-content': `${dateStr}${isDone ? ' - Completed' : (isToday ? ' - Click to log' : '')}`,
               style: {
-                fill: isDone ? '#22c55e' : '#2d3748',
-                stroke: isToday ? '#38bdf8' : 'none',
-                strokeWidth: isToday ? '1px' : '0',
+                fill: isDone ? '#10b981' : '#14171f',
+                stroke: isToday ? '#ffffff' : (isDone ? '#34d399' : '#232734'),
+                strokeWidth: isToday ? '1.5px' : '1px',
                 cursor: isToday ? 'pointer' : 'default',
-                pointerEvents: 'auto',
-                rx: '0px',
-                ry: '0px'
+                pointerEvents: isToday ? 'auto' : 'none',
+                rx: '2px',
+                ry: '2px',
+                transition: 'all 0.15s ease'
               },
               onClick: () => toggleWorkout(dateStr),
             });
           }}
         />
       </div>
- 
-      <Tooltip id="heatmap-tooltip" style={{ backgroundColor: '#0f172a', color: '#f8fafc', borderRadius: '6px' }} />
+
+      <Tooltip 
+        id="heatmap-tooltip" 
+        style={{ 
+          backgroundColor: '#000000', 
+          color: '#ffffff', 
+          border: '1px solid #272a38',
+          borderRadius: '8px',
+          fontSize: '12px',
+          fontWeight: '600'
+        }} 
+      />
     </div>
   );
 }
