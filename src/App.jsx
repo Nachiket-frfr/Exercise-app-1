@@ -115,9 +115,16 @@ export default function App() {
     });
   }, []);
 
-  const toggleWorkout = (dateStr) => {
-    if (!dateStr || dateStr !== todayStr || completedDates.includes(dateStr)) return;
+ const toggleWorkout = (dateStr) => {
+  if (!dateStr) return;
 
+  const isAlreadyDone = completedDates.includes(dateStr);
+
+  if (isAlreadyDone) {
+    // Optional: Allows toggling a completed date off
+    setCompletedDates((prev) => prev.filter((d) => d !== dateStr));
+  } else {
+    // Log the new date
     const yesterdayCompleted = completedDates.includes(yesterdayStr);
     const nextStreak = yesterdayCompleted ? streak + 1 : 1;
 
@@ -126,8 +133,8 @@ export default function App() {
 
     const xpGain = Consistency(userStats.lvl, nextStreak);
     addExp(xpGain);
-  };
-
+  }
+};
   const resetProgress = () => {
     localStorage.clear();
     setCompletedDates([]);

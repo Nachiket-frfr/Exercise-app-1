@@ -1,0 +1,99 @@
+.category {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  margin-top: 9%;
+  border: 2px solid black;
+  height: 8.5vh;
+  font-size: 18px;
+  border-radius: 20px;
+}
+
+.category button {
+  margin-top: 14px;
+  border: none;
+  background-color: transparent;
+}
+
+.category button:active {
+  border-bottom: 2px solid black;
+}
+
+legend {
+  display: flex;
+  align-items: center; 
+  justify-content: center;
+  background-color: white;
+}
+
+.category a {
+  color: black;
+  text-decoration: none;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.user-item {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  border: 3px solid black;
+  border-radius: 20px;
+  padding: 12px 24px;
+  border-style: ridge;
+  box-shadow: 2px 2px 10px cyan;
+  text-wrap-mode: nowrap;
+  width: 85%;
+  height: 100px;
+}
+
+.Your_info {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  border: 3px solid black;
+  border-radius: 20px;
+  height: 12vh;
+  padding: 0 24px;
+  border-style: ridge;
+  box-shadow: 2px 2px 10px cyan;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+.user-profile {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  width: 180px;
+}
+
+.user-profile i {
+  zoom: 2;
+  width: 40px;
+  text-align: center;
+  margin-right: 8px;
+}
+
+.user-profile span {
+  font-weight: bold;
+  word-break: break-word;
+  text-align: left;
+}
+
+.user-item > p,
+.Your_info > p {
+  width: 70px;
+  text-align: center;
+  font-weight: bolder;
+  margin: 0;
+}
